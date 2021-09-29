@@ -1,11 +1,3 @@
-# Copyright (C) 2021. Huawei Technologies Co., Ltd. All rights reserved.
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the MIT License.
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# MIT License for more details.
-
 import math
 import random
 
@@ -18,10 +10,146 @@ from model.diffusion import Diffusion
 from model.utils import sequence_mask, generate_path, duration_loss, fix_len_compatibility
 
 
-class GradTTS(BaseModule):
+
+
+# class TextEncoder(BaseModule):
+#     def __init__(self, n_vocab, n_feats, n_channels, filter_channels, 
+#                  filter_channels_dp, n_heads, n_layers, kernel_size, 
+#                  p_dropout, window_size=None):
+#         super(TextEncoder, self).__init__()
+#         self.n_vocab = n_vocab
+#         self.n_feats = n_feats
+#         self.n_channels = n_channels
+#         self.filter_channels = filter_channels
+#         self.filter_channels_dp = filter_channels_dp
+#         self.n_heads = n_heads
+#         self.n_layers = n_layers
+#         self.kernel_size = kernel_size
+#         self.p_dropout = p_dropout
+#         self.window_size = window_size
+
+#         self.emb = torch.nn.Embedding(n_vocab, n_channels)
+#         torch.nn.init.normal_(self.emb.weight, 0.0, n_channels**-0.5)
+
+#         self.prenet = ConvReluNorm(n_channels, n_channels, n_channels, 
+#                                    kernel_size=5, n_layers=3, p_dropout=0.5)
+
+#         self.encoder = Encoder(n_channels, filter_channels, n_heads, n_layers, 
+#                                kernel_size, p_dropout, window_size=window_size)
+
+#         self.proj_m = torch.nn.Conv1d(n_channels, n_feats, 1)
+#         self.proj_w = DurationPredictor(n_channels, filter_channels_dp, 
+#                                         kernel_size, p_dropout)
+
+#     def forward(self, x, x_lengths):
+#         x = self.emb(x) * math.sqrt(self.n_channels)
+#         x = torch.transpose(x, 1, -1)
+#         x_mask = torch.unsqueeze(sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+
+#         x = self.prenet(x, x_mask)
+#         x = self.encoder(x, x_mask)
+
+#         x_dp = torch.detach(x)
+#         mu = self.proj_m(x) * x_mask
+#         logw = self.proj_w(x_dp, x_mask)
+
+#         return mu, logw, x_mask
+
+
+class TextEncoderWithSpeakerEmbs(BaseModule):
+    def __init__(self, n_vocab, n_feats, n_channels, filter_channels, 
+                 filter_channels_dp, n_heads, n_layers, kernel_size, speaker_emb_dim,
+                 p_dropout, window_size=None):
+        super(TextEncoderWithSpeakerEmbs, self).__init__()
+        self.n_vocab = n_vocab
+        self.n_feats = n_feats
+        self.n_channels = n_channels
+        self.filter_channels = filter_channels
+        self.filter_channels_dp = filter_channels_dp
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+        self.kernel_size = kernel_size
+        self.p_dropout = p_dropout
+        self.window_size = window_size
+                
+        self.emb = torch.nn.Embedding(n_vocab, n_channels)
+        torch.nn.init.normal_(self.emb.weight, 0.0, n_channels**-0.5)
+
+        self.prenet = ConvReluNorm(n_channels, n_channels, n_channels, 
+                                   kernel_size=5, n_layers=3, p_dropout=0.5)
+
+        self.encoder = Encoder(n_channels, filter_channels, n_heads, n_layers, 
+                               kernel_size, p_dropout, window_size=window_size)
+
+        self.proj_m = torch.nn.Conv1d(n_channels, n_feats, 1)
+        self.proj_w = DurationPredictor(n_channels + speaker_emb_dim, filter_channels_dp, 
+                                        kernel_size, p_dropout)
+        
+                
+        
+    def forward(self, x, x_lengths, speaker_embs):
+        
+#         # glow-tts + speaker emb
+#         x = self.emb(x) * math.sqrt(self.hidden_channels)  # [b, t, h]
+#         x = torch.transpose(x, 1, -1)  # [b, h, t]
+#         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
+#             x.dtype
+#         )
+
+#         if self.prenet:
+#             x = self.pre(x, x_mask)
+#         x = self.encoder(x, x_mask)
+
+#         if g is not None:
+#             g_exp = g.expand(-1, -1, x.size(-1))
+#             x_dp = torch.cat([torch.detach(x), g_exp], 1)
+#         else:
+#             x_dp = torch.detach(x)
+
+#         x_m = self.proj_m(x) * x_mask
+#         if not self.mean_only:
+#             x_logs = self.proj_s(x) * x_mask
+#         else:
+#             x_logs = torch.zeros_like(x_m)
+
+#         logw = self.proj_w(x_dp, x_mask)
+
+
+
+#         # grad-tts
+#         x = self.emb(x) * math.sqrt(self.n_channels)
+#         x = torch.transpose(x, 1, -1)
+#         x_mask = torch.unsqueeze(sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+
+#         x = self.prenet(x, x_mask)
+#         x = self.encoder(x, x_mask)
+
+#         x_dp = torch.detach(x)
+#         mu = self.proj_m(x) * x_mask
+#         logw = self.proj_w(x_dp, x_mask)
+
+
+
+        x = self.emb(x) * math.sqrt(self.n_channels)
+        x = torch.transpose(x, 1, -1)
+        x_mask = torch.unsqueeze(sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+
+        x = self.prenet(x, x_mask)
+        x = self.encoder(x, x_mask)
+
+        speaker_embs_exp = speaker_embs.expand(-1, -1, x.size(-1))
+        x_dp = torch.cat([torch.detach(x), speaker_embs_exp], 1)
+        mu = self.proj_m(x) * x_mask
+        logw = self.proj_w(x_dp, x_mask)
+
+
+        return mu, logw, x_mask
+
+
+class GradTTSWithSpeakerEmbs(BaseModule):
     def __init__(self, n_vocab, n_enc_channels, filter_channels, filter_channels_dp, 
                  n_heads, n_enc_layers, enc_kernel, enc_dropout, window_size, 
-                 n_feats, dec_dim, beta_min, beta_max, pe_scale):
+                 n_feats, dec_dim, beta_min, beta_max, pe_scale, speaker_emb_dim):
         super(GradTTS, self).__init__()
         self.n_vocab = n_vocab
         self.n_enc_channels = n_enc_channels
@@ -37,14 +165,16 @@ class GradTTS(BaseModule):
         self.beta_min = beta_min
         self.beta_max = beta_max
         self.pe_scale = pe_scale
+        self.speaker_emb_dim = speaker_emb_dim
 
-        self.encoder = TextEncoder(n_vocab, n_feats, n_enc_channels, 
-                                   filter_channels, filter_channels_dp, n_heads, 
-                                   n_enc_layers, enc_kernel, enc_dropout, window_size)
+        self.encoder = TextEncoderWithSpeakerEmbs(n_vocab, n_feats, n_enc_channels, 
+                                                  filter_channels, filter_channels_dp, n_heads, 
+                                                  n_enc_layers, enc_kernel, speaker_emb_dim,
+                                                  enc_dropout, window_size)
         self.decoder = Diffusion(n_feats, dec_dim, beta_min, beta_max, pe_scale)
 
     @torch.no_grad()
-    def forward(self, x, x_lengths, n_timesteps, temperature=1.0, stoc=False, length_scale=1.0, sample_noise=False):
+    def forward(self, x, x_lengths, n_timesteps, speaker_embs, temperature=1.0, stoc=False, length_scale=1.0):
         """
         Generates mel-spectrogram from text. Returns:
             1. encoder outputs
@@ -61,10 +191,11 @@ class GradTTS(BaseModule):
             length_scale (float, optional): controls speech pace.
                 Increase value to slow down generated speech and vice versa.
         """
-        x, x_lengths = self.relocate_input([x, x_lengths])
+        speaker_embs = F.normalize(speaker_embs).unsqueeze(-1) # [b, h] -> [b, h, 1]
+        x, x_lengths, speaker_embs = self.relocate_input([x, x_lengths, speaker_embs])
 
         # Get encoder_outputs `mu_x` and log-scaled token durations `logw`
-        mu_x, logw, x_mask = self.encoder(x, x_lengths)
+        mu_x, logw, x_mask = self.encoder(x, x_lengths, speaker_embs)
 
         w = torch.exp(logw) * x_mask
         w_ceil = torch.ceil(w) * length_scale
@@ -83,17 +214,14 @@ class GradTTS(BaseModule):
         encoder_outputs = mu_y[:, :, :y_max_length]
 
         # Sample latent representation from terminal distribution N(mu_y, I)
-        if sample_noise:
-            z = mu_y + torch.randn_like(mu_y, device=mu_y.device) / temperature
-        else:
-            z = mu_y
+        z = mu_y + torch.randn_like(mu_y, device=mu_y.device) / temperature
         # Generate sample by performing reverse dynamics
         decoder_outputs = self.decoder(z, y_mask, mu_y, n_timesteps, stoc)
         decoder_outputs = decoder_outputs[:, :, :y_max_length]
 
         return encoder_outputs, decoder_outputs, attn[:, :, :y_max_length]
 
-    def compute_loss(self, x, x_lengths, y, y_lengths, out_size=None):
+    def compute_loss(self, x, x_lengths, y, y_lengths, speaker_embs, out_size=None):
         """
         Computes 3 losses:
             1. duration loss: loss between predicted token durations and those extracted by Monotinic Alignment Search (MAS).
@@ -108,10 +236,12 @@ class GradTTS(BaseModule):
             out_size (int, optional): length (in mel's sampling rate) of segment to cut, on which decoder will be trained.
                 Should be divisible by 2^{num of UNet downsamplings}. Needed to increase batch size.
         """
-        x, x_lengths, y, y_lengths = self.relocate_input([x, x_lengths, y, y_lengths])
+        
+        speaker_embs = F.normalize(speaker_embs).unsqueeze(-1) # [b, h] -> [b, h, 1]
+        x, x_lengths, y, y_lengths, speaker_embs = self.relocate_input([x, x_lengths, y, y_lengths, speaker_embs])
 
         # Get encoder_outputs `mu_x` and log-scaled token durations `logw`
-        mu_x, logw, x_mask = self.encoder(x, x_lengths)
+        mu_x, logw, x_mask = self.encoder(x, x_lengths, speaker_embs)
         y_max_length = y.shape[-1]
 
         y_mask = sequence_mask(y_lengths, y_max_length).unsqueeze(1).to(x_mask)
